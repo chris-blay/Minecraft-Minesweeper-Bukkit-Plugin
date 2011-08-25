@@ -1,0 +1,62 @@
+name: Minesweeper
+main: com.covertbagel.minesweeper.Minesweeper
+version: 0.3
+author: covertbagel
+commands:
+    minesweeper:
+        description: Displays all Minesweeper commands
+        usage: /<command>
+    ms-arena-create:
+        description: Create a Minesweeper arena (give a name, specify a size)
+        usage: /<command> name (small|medium|large)
+    ms-arena-reset:
+        description: Reset an existing Minesweeper arena (give a name)
+        usage: /<command> name
+    ms-arena-vitrify:
+        description: Vitrify an existing Minesweeper arena (can't be reset anymore but is still playable, give a name)
+        usage: /<command> name
+    ms-arena-tp:
+        description: Teleport yourself to an existing Minesweeper arena (give a name)
+        usage: /<command> name
+    ms-game-create:
+        description: Create a Minesweeper game (aka original version, specify a size)
+        usage: /<command> (small|medium|large)
+    ms-items:
+        description: Give yourself torches and redstone torches to play Minesweeper
+        usage: /<command>
+permissions:
+    minesweeper.*:
+        description: Allow access to all Minesweeper commands
+        children:
+            minesweeper.arena.*: true
+            minesweeper.game.*: true
+            minesweeper.items: true
+    minesweeper.arena.*:
+        description: Allow access to Minesweeper arena commands
+        children:
+            minesweeper.arena.create: true
+            minesweeper.arena.reset: true
+            minesweeper.arena.vitrify: true
+            minesweeper.arena.teleport: true
+    minesweeper.game.*:
+        description: Allow access to Minesweeper game commands
+        children:
+            minesweeper.game.create: true
+    minesweeper.arena.create:
+        description: Allow creating new Minesweeper arenas
+        default: op
+    minesweeper.arena.reset:
+        description: Allow reseting existing Minesweeper arenas
+        default: true
+    minesweeper.arena.vitrify:
+        description: Allow vitrifying existing Minesweeper arenas
+        default: op
+    minesweeper.arena.teleport:
+        description: Allow teleporting to existing Minesweeper arenas
+        default: true
+    minesweeper.game.create:
+        description: Allow creating new Minesweeper games
+        default: op
+    minesweeper.items:
+        description: Allow getting items to play Minesweeper
+        default: true

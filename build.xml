@@ -1,0 +1,18 @@
+<project name="Minesweeper" default="dist" basedir=".">
+	<property name="pluginname" value="Minesweeper"/>
+	
+	<target name="compile">
+		<javac srcdir="src" destdir="bin" includeantruntime="false">
+			<classpath>
+				<pathelement location="assets/bukkit-804.jar"/>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="dist" depends="compile">
+		<jar jarfile="server/plugins/${pluginname}.jar">
+			<fileset dir="bin"/>
+			<fileset file="plugin.yml"/>
+		</jar>
+	</target>
+</project>

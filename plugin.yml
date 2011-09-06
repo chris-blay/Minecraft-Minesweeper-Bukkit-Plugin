@@ -57,6 +57,10 @@ permissions:
     minesweeper.game.create:
         description: Allow creating new Minesweeper games
         default: op
+    minesweeper.play:
+        description: Allow player to play on a Minesweeper game/arena. Disables other commands for player if false
+        default: true
     minesweeper.items:
         description: Allow getting items to play Minesweeper
         default: true
+

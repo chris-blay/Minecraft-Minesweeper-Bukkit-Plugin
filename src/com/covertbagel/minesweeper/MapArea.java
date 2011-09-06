@@ -1,40 +1,46 @@
 /*
- * Minesweeper Plugin v0.3 by covertbagel for CraftBukkit 1000
- * 16 August 2011
+ * Minesweeper Plugin v0.4 by covertbagel for CraftBukkit 1060
+ * 5 September 2011
  * Licensed Under GPLv3
  */
 
 package com.covertbagel.minesweeper;
 
 import org.bukkit.Location;
+import org.bukkit.block.Block;
 
 public class MapArea {
 	private Location location = null;
+	private String name = null;
+	private int remainingBlocks;
 	final private int y;
 	final private double maxX, minX, maxZ, minZ;
 	final private int[] info;
 	
-	public MapArea(Location location, int[] info, boolean rememberLocation) {
+	public MapArea(final Location location, final String name, final int[] info) {
 		final int size = info[Minesweeper.SIZE];
 		final int x = (int) Math.floor(location.getX());
 		final int z = (int) Math.floor(location.getZ());
-		if (rememberLocation) {
+		if (name != null) {
 			this.location = location;
+			this.name = name;
 		}
 		this.y = (int) Math.floor(location.getY());
-		this.maxX = x + size / 2;
-		this.minX = x - size / 2;
-		this.maxZ = z + size / 2;
-		this.minZ = z - size / 2;
+		this.maxX = (x + size / 2) + 1;
+		this.minX = (x - size / 2) - 2;
+		this.maxZ = (z + size / 2) + 1;
+		this.minZ = (z - size / 2) - 2;
 		this.info = info;
+		reset();
 	}
 	
-	public boolean inArea(double x, double y, double z) {
-		x = Math.floor(x);
-		y = Math.floor(y);
-		z = Math.floor(z);
+	public boolean inArea(final Block block) {
+		final int x = (int) Math.floor(block.getX());
+		final int y = (int) Math.floor(block.getY());
+		final int z = (int) Math.floor(block.getZ());
 		return (
-			this.y == y &&
+			this.y + 9 > y && // this is the 'height above' distance
+			this.y - 7 < y && // this is the 'height below' distance
 			this.maxX >= x &&
 			this.minX <= x &&
 			this.maxZ >= z &&
@@ -46,11 +52,32 @@ public class MapArea {
 		return this.location;
 	}
 	
-	public void clearLocation() {
-		this.location = null;
+	public String getName() {
+		return this.name;
 	}
 	
 	public int[] getInfo() {
 		return this.info;
+	}
+	
+	public void vitrify() {
+		this.location = null;
+		this.name = null;
+	}
+	
+	public void reset() {
+		this.remainingBlocks = info[Minesweeper.SIZE] * info[Minesweeper.SIZE] - info[Minesweeper.MINES];
+	}
+	
+	public int blockCleared() {
+		return --remainingBlocks;
+	}
+	
+	public boolean isClear() {
+		return remainingBlocks == 0;
+	}
+	
+	public boolean isArena() {
+		return this.location != null;
 	}
 }

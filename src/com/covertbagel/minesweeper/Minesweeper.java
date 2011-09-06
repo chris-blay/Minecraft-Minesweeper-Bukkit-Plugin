@@ -1,6 +1,6 @@
 /*
- * Minesweeper Plugin v0.3 by covertbagel for CraftBukkit 1000
- * 16 August 2011
+ * Minesweeper Plugin v0.4 by covertbagel for CraftBukkit 1060
+ * 5 Semptember 2011
  * Licensed Under GPLv3
  */
 
@@ -9,6 +9,9 @@ package com.covertbagel.minesweeper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import org.bukkit.DyeColor;
@@ -22,6 +25,7 @@ import org.bukkit.event.Event;
 import org.bukkit.event.Event.Priority;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class Minesweeper extends JavaPlugin {
@@ -50,15 +54,18 @@ public class Minesweeper extends JavaPlugin {
 		DyeColor.BLACK
 	};
 	
-	private static final String NAME = Minesweeper.class.getSimpleName();
-	private static final Logger LOG = Logger.getLogger(NAME);
-	
-	private static final String PERMISSION_DENIED = "Permission denied.";
-	private static final String ARENA_NOT_FOUND = "Arena does not exist.";
-	private static final String ARENA_FOUND = "Arena already exists.";
-	private static final String ARENA_CREATED = "[%s] Arena %s created by %s.";
-	private static final String ARENA_RESET = "[%s] Arena %s reset by %s.";
-	private static final String ARENA_VITRIFIED = "[%s] Arena %s vitrified by %s.";
+	private static final String PLUGIN_ENABLED = "[%s] Plugin enabled";
+	private static final String PLUGIN_DISABLED = "[%s] Plugin disabled";
+	private static final String PERMISSION_DENIED = "[%s] Permission denied";
+	private static final String ARENA_NOT_FOUND = "[%s] Arena %s does not exist";
+	private static final String ARENA_FOUND = "[%s] Arena %s already exists";
+	private static final String ARENA_CREATED = "[%s] Arena %s created by %s";
+	private static final String ARENA_RESET = "[%s] Arena %s reset by %s";
+	private static final String ARENA_VITRIFIED = "[%s] Arena %s vitrified by %s";
+	public static final String ARENA_WIN = "[%s] Arena %s has been cleared";
+	public static final String ARENA_LOSE = "[%s] Arena %s has been exploded";
+	private static final String ARENA_WILL_RESET = "[%s] Arena %s will automatically reset in %d seconds";
+	private static final String ARENA_AUTO_RESET = "[%s] Arena %s has been reset";
 	private static final String COMMAND_LIST =
 		"/minesweeper - shows this help; " +
 		"/ms-arena-create name (small|medium|large) - create arena; " +
@@ -69,50 +76,57 @@ public class Minesweeper extends JavaPlugin {
 		"/ms-items - give yourself items to play Minesweeper";
 	
 	private GameBlockListener blockListener;
-	private List<MapArea> mapAreas = new ArrayList<MapArea>();
-	private HashMap<String, MapArea> arenas = new HashMap<String, MapArea>();
+	private final List<MapArea> mapAreas = new ArrayList<MapArea>();
+	private final HashMap<String, MapArea> arenas = new HashMap<String, MapArea>();
+	private final ScheduledExecutorService exec = Executors.newScheduledThreadPool(1);
+	
+	public final String NAME = Minesweeper.class.getSimpleName();
+	public final Logger LOG = Logger.getLogger(NAME);
 	
 	@Override
 	public void onEnable() {
 		// setup block listener
 		blockListener = new GameBlockListener(this);
-		getServer().getPluginManager().registerEvent(Event.Type.BLOCK_PLACE, blockListener, Priority.Normal, this);
-		LOG.info(NAME + " Plugin enabled");
+		final PluginManager pluginManager = getServer().getPluginManager();
+		pluginManager.registerEvent(Event.Type.BLOCK_PLACE, blockListener, Priority.Normal, this);
+		pluginManager.registerEvent(Event.Type.BLOCK_BREAK, blockListener, Priority.Normal, this);
+		LOG.info(String.format(PLUGIN_ENABLED, NAME));
 	}
 	
 	@Override
 	public void onDisable() {
-		LOG.info(NAME + " Plugin disabled");
+		LOG.info(String.format(PLUGIN_DISABLED, NAME));
 	}
 	
 	@Override
-	public boolean onCommand(CommandSender sender, Command command, String label, String[] arguments) {
+	public boolean onCommand(final CommandSender sender, final Command command, final String label, final String[] arguments) {
 		final String commandName = command.getName();
+		final boolean canPlay = sender.hasPermission("minesweeper.play");
 		if (commandName.equalsIgnoreCase(NAME)) {
 			sender.sendMessage(COMMAND_LIST);
 			return true;
 		} else if (commandName.equalsIgnoreCase("ms-game-create")) {
-			if (sender.hasPermission("minesweeper.game.create")) {
+			if (canPlay && sender.hasPermission("minesweeper.game.create")) {
 				return gameCreate(sender, arguments);
 			}
 			return permissionDenied(sender);
 		} else if (commandName.equalsIgnoreCase("ms-arena-create")) {
-			if (sender.hasPermission("minesweeper.arena.create")) {
+			if (canPlay && sender.hasPermission("minesweeper.arena.create")) {
 				return arenaCreate(sender, arguments);
 			}
 			return permissionDenied(sender);
 		} else if (commandName.equalsIgnoreCase("ms-arena-reset")) {
-			if (sender.hasPermission("minesweeper.arena.reset")) {
+			if (canPlay && sender.hasPermission("minesweeper.arena.reset")) {
 				return arenaReset(sender, arguments);
 			}
 			return permissionDenied(sender);
 		} else if (commandName.equalsIgnoreCase("ms-arena-vitrify")) {
-			if (sender.hasPermission("minesweeper.arena.vitrify")) {
+			if (canPlay && sender.hasPermission("minesweeper.arena.vitrify")) {
 				return arenaVitrify(sender, arguments);
 			}
 			return permissionDenied(sender);
 		} else if (commandName.equalsIgnoreCase("ms-arena-tp")) {
-			if (sender.hasPermission("minesweeper.arena.teleport")) {
+			if (canPlay && sender.hasPermission("minesweeper.arena.teleport")) {
 				return arenaTeleport(sender, arguments);
 			}
 			return permissionDenied(sender);
@@ -129,7 +143,7 @@ public class Minesweeper extends JavaPlugin {
 		return mapAreas;
 	}
 	
-	private boolean gameCreate(CommandSender sender, String[] arguments) {
+	private boolean gameCreate(final CommandSender sender, final String[] arguments) {
 		// parse arguments
 		if (arguments.length != 1) {
 			return false;
@@ -141,10 +155,10 @@ public class Minesweeper extends JavaPlugin {
 		
 		// get player location
 		final Player player = (Player) sender;
-		final Location location = player.getLocation();
+		final Location location = fixLocation(player.getLocation());
 		
 		// save map area for the block listener to use later
-		mapAreas.add(new MapArea(location, info, false));
+		mapAreas.add(new MapArea(location, null, info));
 		
 		// setup area
 		setupArea(Material.STONE, location, info);
@@ -155,7 +169,7 @@ public class Minesweeper extends JavaPlugin {
 		return true;
 	}
 	
-	private boolean arenaCreate(CommandSender sender, String[] arguments) {
+	private boolean arenaCreate(final CommandSender sender, final String[] arguments) {
 		// parse arguments
 		if (arguments.length != 2) {
 			return false;
@@ -169,22 +183,22 @@ public class Minesweeper extends JavaPlugin {
 		// try to look for arena with this name
 		final MapArea arena = arenas.get(name);
 		if (arena != null) {
-			sender.sendMessage(ARENA_FOUND);
+			sender.sendMessage(String.format(ARENA_FOUND, NAME, name));
 			return true;
 		}
 		
 		// get player location
 		final Player player = (Player) sender;
-		final Location location = player.getLocation();
+		final Location location = fixLocation(player.getLocation());
 		
 		// save map area for the block listener to use later
-		final MapArea mapArea = new MapArea(location.clone(), info, true);
+		final MapArea mapArea = new MapArea(location.clone(), name, info);
 		arenas.put(name, mapArea);
 		mapAreas.add(mapArea);
 		
 		// make big block of obsidian to enclose the arena in
 		for (int i = -PALETTE.length + 1; i < 7; i++) {
-			placeLayer(location.clone(), i, info[Minesweeper.SIZE] + 4, Material.OBSIDIAN.getId(), (byte) 0);
+			placeLayer(location.clone(), i, info[SIZE] + 4, Material.OBSIDIAN.getId(), (byte) 0);
 		}
 		
 		// setup area
@@ -197,7 +211,7 @@ public class Minesweeper extends JavaPlugin {
 		return true;
 	}
 	
-	private boolean arenaReset(CommandSender sender, String[] arguments) {
+	private boolean arenaReset(final CommandSender sender, final String[] arguments) {
 		// parse arguments
 		if (arguments.length != 1) {
 			return false;
@@ -210,22 +224,26 @@ public class Minesweeper extends JavaPlugin {
 		// look for arena with this name
 		final MapArea arena = arenas.get(name);
 		if (arena == null) {
-			sender.sendMessage(ARENA_NOT_FOUND);
+			sender.sendMessage(String.format(ARENA_NOT_FOUND, NAME, name));
 			return true;
 		}
 		
-		// setup area
-		setupArea(Material.OBSIDIAN, arena.getLocation().clone(), arena.getInfo());
+		arenaResetWorker(arena);
 		
 		// give player some normal and redstone torches
 		final Player player = (Player) sender;
 		givePlayerStuff(player);
 		
-		sender.getServer().broadcastMessage(String.format(ARENA_RESET, NAME, name, player.getName()));
+		getServer().broadcastMessage(String.format(ARENA_RESET, NAME, name, player.getName()));
 		return true;
 	}
 	
-	private boolean arenaVitrify(CommandSender sender, String[] arguments) {
+	private void arenaResetWorker(final MapArea arena) {
+		setupArea(Material.OBSIDIAN, arena.getLocation().clone(), arena.getInfo());
+		arena.reset();
+	}
+	
+	private boolean arenaVitrify(final CommandSender sender, final String[] arguments) {
 		// parse arguments
 		if (arguments.length != 1) {
 			return false;
@@ -246,13 +264,13 @@ public class Minesweeper extends JavaPlugin {
 		arenas.remove(name);
 		
 		// modify it so it will be removed from mapAreas list after explosion
-		arena.clearLocation();
+		arena.vitrify();
 		
-		sender.getServer().broadcastMessage(String.format(ARENA_VITRIFIED, NAME, name, ((Player) sender).getName()));
+		getServer().broadcastMessage(String.format(ARENA_VITRIFIED, NAME, name, ((Player) sender).getName()));
 		return true;
 	}
 	
-	private boolean arenaTeleport(CommandSender sender, String[] arguments) {
+	private boolean arenaTeleport(final CommandSender sender, final String[] arguments) {
 		// parse arguments
 		if (arguments.length != 1) {
 			return false;
@@ -279,20 +297,31 @@ public class Minesweeper extends JavaPlugin {
 		return true;
 	}
 	
-	private static boolean permissionDenied(CommandSender sender) {
-		sender.sendMessage(PERMISSION_DENIED);
+	private Location fixLocation(final Location location) {
+		location.setX(Math.floor(location.getX()) + 0.5);
+		location.setY(Math.floor(location.getY()));
+		location.setZ(Math.floor(location.getZ()) + 0.5);
+		return location;
+	}
+	
+	private boolean permissionDenied(final CommandSender sender) {
+		return permissionDenied((Player) sender);
+	}
+	
+	public boolean permissionDenied(final Player player) {
+		player.sendMessage(String.format(PERMISSION_DENIED, NAME));
 		return true;
 	}
 	
-	public static void setupArea(Material material, Location location, int[] info) {
+	public static void setupArea(final Material material, final Location location, final int[] info) {
 		// place lots of the specified material below
 		for (int i = 0; i < 6; i++) {
-			placeLayer(location.clone(), i, info[Minesweeper.SIZE] + 4, material.getId(), (byte) 0);
+			placeLayer(location.clone(), i, info[SIZE] + 4, material.getId(), (byte) 0);
 		}
 		
 		// place lots of air above
-		for (int i = 0; i < Minesweeper.PALETTE.length; i++) {
-			placeLayer(location.clone(), -i, info[Minesweeper.SIZE] + 2, Material.AIR.getId(), (byte) 0);
+		for (int i = 0; i < PALETTE.length; i++) {
+			placeLayer(location.clone(), -i, info[SIZE] + 2, Material.AIR.getId(), (byte) 0);
 		}
 		
 		// place torches around the outside of the area
@@ -300,20 +329,20 @@ public class Minesweeper extends JavaPlugin {
 		placeLayer(location.clone(), 0, info[SIZE], Material.AIR.getId(), (byte) 0);
 		
 		// place bottom layer of TNT
-		placeLayer(location.clone(), 3, info[Minesweeper.SIZE], Material.TNT.getId(), (byte) 0);
+		placeLayer(location.clone(), 3, info[SIZE], Material.TNT.getId(), (byte) 0);
 		
 		// generate and place random map
-		final int[] map = generateMap(info[Minesweeper.MINES], info[Minesweeper.SIZE]);
-		placeMap(location.clone(), 2, info[Minesweeper.SIZE], map);
+		final int[] map = generateMap(info[MINES], info[SIZE]);
+		placeMap(location.clone(), 2, info[SIZE], map);
 		
 		// place top layer of sand
-		placeLayer(location.clone(), 1, info[Minesweeper.SIZE], Material.SAND.getId(), (byte) 0);
+		placeLayer(location.clone(), 1, info[SIZE], Material.SAND.getId(), (byte) 0);
 		
 		// place wool blocks and signs at corners to identify colors
-		placePalettes(location, info[Minesweeper.SIZE]);
+		placePalettes(location.clone(), info[SIZE]);
 	}
 	
-	public static void placePalettes(Location location, int size) {
+	public static void placePalettes(final Location location, int size) {
 		size += 2;
 		location.setX(location.getX() - size / 2);
 		location.setZ(location.getZ() - size / 2);
@@ -326,17 +355,17 @@ public class Minesweeper extends JavaPlugin {
 		placePalette(location);
 	}
 	
-	public static void placePalette(Location location) {
+	public static void placePalette(final Location location) {
 		Block block;
-		for (int i = 0; i < Minesweeper.PALETTE.length; i++) {
+		for (int i = 0; i < PALETTE.length; i++) {
 			block = location.getBlock();
 			block.setType(Material.WOOL);
-			block.setData(Minesweeper.PALETTE[i].getData());
+			block.setData(PALETTE[i].getData());
 			location.setY(location.getY() + 1);
 		}
 	}
 	
-	public static void placeMap(Location location, int depth, int size, int[] map) {
+	public static void placeMap(final Location location, final int depth, final int size, final int[] map) {
 		int i, j, k;
 		Block block;
 		location.setY(location.getY() - depth);
@@ -350,7 +379,7 @@ public class Minesweeper extends JavaPlugin {
 				} else if (k >= 0 && k <= 8) {
 					block = location.getBlock();
 					block.setType(Material.WOOL);
-					block.setData(Minesweeper.PALETTE[k].getData());
+					block.setData(PALETTE[k].getData());
 				}
 				location.setX(location.getX() + 1);
 			}
@@ -359,7 +388,7 @@ public class Minesweeper extends JavaPlugin {
 		}
 	}
 	
-	public static void placeLayer(Location location, int depth, int size, int typeid, byte data) {
+	public static void placeLayer(final Location location, final int depth, final int size, final int typeid, final byte data) {
 		location.setY(location.getY() - depth);
 		location.setX(location.getX() - size / 2);
 		location.setZ(location.getZ() - size / 2);
@@ -373,7 +402,7 @@ public class Minesweeper extends JavaPlugin {
 		}
 	}
 	
-	public static int[] parseSize(String size) {
+	public static int[] parseSize(final String size) {
 		if (size.equalsIgnoreCase("small")) {
 			return SMALL;
 		} else if (size.equalsIgnoreCase("medium")) {
@@ -384,10 +413,10 @@ public class Minesweeper extends JavaPlugin {
 		return null;
 	}
 	
-	public static int[] generateMap(int mines, int size) {
+	public static int[] generateMap(final int mines, final int size) {
 		// create and initialize array
 		int i, j, k;
-		int[] map = new int[size * size];
+		final int[] map = new int[size * size];
 		for (i = 0; i < map.length; i++) {
 			map[i] = CELL_NOT_SET;
 		}
@@ -437,9 +466,21 @@ public class Minesweeper extends JavaPlugin {
 		return map;
 	}
 	
-	private static boolean givePlayerStuff(Player player) {
-		if (player.hasPermission("minesweeper.items")) {
-			Inventory inventory = player.getInventory();
+	public void delayedArenaReset(final MapArea arena) {
+		final int resetDelay = arena.getInfo()[MINES] / 2;
+		getServer().broadcastMessage(String.format(ARENA_WILL_RESET, NAME, arena.getName(), resetDelay));
+		exec.schedule(new Runnable(){
+			@Override
+			public void run() {
+				arenaResetWorker(arena);
+				getServer().broadcastMessage(String.format(ARENA_AUTO_RESET, NAME, arena.getName()));
+			}
+		}, resetDelay, TimeUnit.SECONDS);
+	}
+	
+	private static boolean givePlayerStuff(final Player player) {
+		if (player.hasPermission("minesweeper.play") && player.hasPermission("minesweeper.items")) {
+			final Inventory inventory = player.getInventory();
 			inventory.addItem(new ItemStack(Material.REDSTONE_TORCH_ON, 64));
 			inventory.addItem(new ItemStack(Material.TORCH, 64));
 			return true;
